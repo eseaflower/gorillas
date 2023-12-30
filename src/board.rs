@@ -1,6 +1,9 @@
 use bevy::prelude::*;
 use bevy_ecs_tilemap::prelude::*;
-use bevy_rapier2d::{geometry::Collider, pipeline::CollisionEvent};
+use bevy_rapier2d::{
+    geometry::{Collider, Restitution},
+    pipeline::CollisionEvent,
+};
 
 use crate::shot::Shot;
 
@@ -10,7 +13,17 @@ impl Plugin for BoardPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugins(TilemapPlugin)
             .add_systems(Startup, spawn_board2)
-            .add_systems(Update, read_colisions);
+            .add_systems(Update, read_colisions)
+            .add_systems(Update, handle_despawn);
+    }
+}
+
+#[derive(Component, Debug)]
+struct Despawn;
+
+fn handle_despawn(mut commands: Commands, query: Query<(Entity, &Despawn)>) {
+    for (entity, _) in query.iter() {
+        commands.entity(entity).despawn();
     }
 }
 
@@ -24,13 +37,21 @@ fn spawn_board2(
         TextureAtlas::from_grid(texture_handle, Vec2::new(16.0, 16.0), 1, 1, None, None);
     let texture_atlas_handle = texture_atlases.add(texture_atlas);
 
-    for tpos in spawn_tower(TilePos { x: 0, y: 0 }, 2, 1) {
-        commands.spawn(SpriteSheetBundle {
-            texture_atlas: texture_atlas_handle.clone(),
-            sprite: TextureAtlasSprite::new(0),
-            transform: Transform::from_xyz(tpos.x as f32 * (16.0 +5.0), tpos.y as f32 * (16.0 + 5.0), 0.0),
-            ..default()
-        });
+    for tpos in spawn_tower(TilePos { x: 0, y: 0 }, 3, 5) {
+        commands.spawn((
+            SpriteSheetBundle {
+                texture_atlas: texture_atlas_handle.clone(),
+                sprite: TextureAtlasSprite::new(0),
+                transform: Transform::from_xyz(
+                    tpos.x as f32 * (16.0) + 100.0,
+                    tpos.y as f32 * (16.0) - 250.0,
+                    0.0,
+                ),
+                ..default()
+            },
+            Collider::cuboid(8.0, 8.0),
+            Restitution::coefficient(2.0),
+        ));
     }
 }
 
@@ -121,14 +142,16 @@ fn spawn_tower(position: TilePos, width: u32, height: u32) -> impl Iterator<Item
 fn read_colisions(
     mut commands: Commands,
     mut reader: EventReader<CollisionEvent>,
-    parent_query: Query<(&Parent, &Collider)>,
+    query: Query<&Shot>,
 ) {
     for event in reader.read() {
         println!("Collision started: {:?}", event);
         if let CollisionEvent::Started(collider1, collider2, _) = event {
-            if let Ok((p, c)) = parent_query.get(*collider1) {
-                commands.entity(p.get()).despawn_recursive();
-            }
+            let to_despawn = match query.get(*collider1) {
+                Ok(_) => *collider2,
+                Err(_) => *collider1,
+            };
+            commands.entity(to_despawn).insert(Despawn);
         }
     }
 }
