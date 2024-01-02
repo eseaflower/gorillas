@@ -1,5 +1,4 @@
 mod board;
-mod position;
 mod shot;
 
 use bevy::{prelude::*, render::camera::ScalingMode};
