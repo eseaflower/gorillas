@@ -1,5 +1,6 @@
 mod board;
 mod shot;
+mod ldtk;
 
 use bevy::{prelude::*, render::camera::ScalingMode};
 use bevy_inspector_egui::quick::WorldInspectorPlugin;

@@ -25,7 +25,7 @@ fn spawn_shot(commands: &mut Commands, impulse: Vec2) {
         .spawn((
             SpriteBundle {
                 sprite: Sprite {
-                    custom_size: Some(Vec2::splat(16.0)),
+                    custom_size: Some(Vec2::splat(8.0)),
                     color: Color::rgb(0.8, 0.0, 0.0),
                     ..Default::default()
                 },
@@ -35,7 +35,7 @@ fn spawn_shot(commands: &mut Commands, impulse: Vec2) {
             Shot,
         ))
         .insert(RigidBody::Dynamic)
-        .insert(Collider::ball(8.0))
+        .insert(Collider::cuboid(4.0, 4.0))
         // .insert(Collider::cuboid(8.0, 8.0))
         .insert(ExternalImpulse {
             impulse,
