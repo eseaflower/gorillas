@@ -1,6 +1,8 @@
 use bevy::{ecs::query, prelude::*, transform::commands, window::PrimaryWindow};
 use bevy_rapier2d::{
-    dynamics::{AdditionalMassProperties, ExternalForce, ExternalImpulse, RigidBody},
+    dynamics::{
+        AdditionalMassProperties, CoefficientCombineRule, ExternalForce, ExternalImpulse, RigidBody,
+    },
     geometry::{
         ActiveEvents, Collider, ColliderMassProperties, CollidingEntities, Friction, Restitution,
     },
@@ -35,7 +37,6 @@ fn spawn_shot(commands: &mut Commands, impulse: Vec2) {
         .insert(RigidBody::Dynamic)
         .insert(Collider::ball(8.0))
         // .insert(Collider::cuboid(8.0, 8.0))
-        .insert(ColliderMassProperties::Density(0.01))
         .insert(ExternalImpulse {
             impulse,
             ..Default::default()
@@ -71,7 +72,7 @@ fn shoot(mut commands: Commands, keyboard: Res<Input<KeyCode>>, mut gun: ResMut<
         gun.force = 0.0;
     }
     if keyboard.pressed(KeyCode::Space) {
-        gun.force += 0.01;
+        gun.force += 1.0;
     }
 }
 
