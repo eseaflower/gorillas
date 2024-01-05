@@ -3,10 +3,11 @@ use bevy_rapier2d::{
     dynamics::{ExternalImpulse, RigidBody},
     geometry::{ActiveEvents, Collider},
 };
+use serde_json::Value;
 
 use crate::{
     ldtk::{self, convert_coords, LdtkAsset},
-    Player1,
+    Players,
 };
 
 pub struct PlayerPlugin;
@@ -20,16 +21,16 @@ impl Plugin for PlayerPlugin {
 
 fn spawn_player(
     mut commands: Commands,
-    mut player1: ResMut<Player1>,
+    mut players: ResMut<Players>,
     maps: Res<Assets<LdtkAsset>>,
 ) {
     // Board is already loaded or the map is not loaded yet
-    if player1.loaded || maps.get(&player1.map).is_none() {
+    if players.loaded || maps.get(&players.map).is_none() {
         return;
     }
 
-    eprintln!("Spawning Player1");
-    let map = maps.get(&player1.map).expect("Failed to load map");
+    eprintln!("Spawning players");
+    let map = maps.get(&players.map).expect("Failed to load map");
     let project = &map.project;
 
     // Assume we use the first level
@@ -40,29 +41,56 @@ fn spawn_player(
     // Use the first tile layer
     let layers = level.layer_instances.as_ref().expect("No layers");
     for layer in layers {
-        spawn_layer(&mut commands, level_size, layer);
+        spawn_layer(&mut commands, level_size, layer, &mut players);
     }
 
-    player1.loaded = true;
+    if players.names.len() > 0 {
+        players.current_player = Some(0);
+    }
+
+    players.loaded = true;
 }
 
-fn spawn_layer(commands: &mut Commands, level_size: Vec2, layer: &ldtk::LayerInstance) {
+fn spawn_layer(
+    commands: &mut Commands,
+    level_size: Vec2,
+    layer: &ldtk::LayerInstance,
+    players: &mut ResMut<Players>,
+) {
     let grid_size = layer.grid_size as f32;
-    let brick_size = Vec2::new(grid_size, grid_size);
 
     // Spawn entities
     for entity in &layer.entity_instances {
-        if entity.identifier == "Player1" {
+        let player = entity.field_instances.iter().find(|field| {
+            if field.identifier == "EntityType" {
+                match &field.value {
+                    Some(Value::String(s)) if s == "Player" => true,
+                    _ => false,
+                }
+            } else {
+                false
+            }
+        });
+
+        if player.is_some() {
+            players.names.push(entity.identifier.clone());
             let position = convert_coords(&entity.px, grid_size, level_size);
-            create_player(commands, position, Vec2::new(10.0, 10.0));
+            create_player(
+                commands,
+                position,
+                Vec2::new(10.0, 10.0),
+                entity.identifier.clone(),
+            );
         }
     }
 }
 
 #[derive(Component, Debug)]
-pub struct Player;
+pub struct Player {
+    name: String,
+}
 
-fn create_player(commands: &mut Commands, position: Vec2, size: Vec2) {
+fn create_player(commands: &mut Commands, position: Vec2, size: Vec2, name: String) {
     commands
         .spawn(SpriteBundle {
             sprite: Sprite {
@@ -73,7 +101,7 @@ fn create_player(commands: &mut Commands, position: Vec2, size: Vec2) {
             transform: Transform::from_xyz(position.x, position.y, 0.0),
             ..default()
         })
-        .insert(Player);
+        .insert(Player { name });
 }
 
 #[derive(Debug, Component)]
@@ -114,13 +142,23 @@ struct Gun {
 
 fn shoot(
     mut commands: Commands,
-    keyboard: Res<Input<KeyCode>>,
     mut gun: ResMut<Gun>,
-    q_player: Query<&GlobalTransform, With<Player>>,
+    mut players: ResMut<Players>,
+    keyboard: Res<Input<KeyCode>>,
+    q_player: Query<(&GlobalTransform, &Player)>,
 ) {
     if keyboard.just_released(KeyCode::Space) {
-        if let Ok(player) = q_player.get_single() {
-            let player_position = player.translation().truncate();
+        // Find the current player
+        let player = q_player.iter().find(|(_, player)| {
+            if let Some(current_player) = &players.current_player {
+                player.name == players.names[*current_player]
+            } else {
+                false
+            }
+        });
+
+        if let Some((transform, _)) = player {
+            let player_position = transform.translation().truncate();
 
             let direction = gun.target - player_position;
 
@@ -131,6 +169,10 @@ fn shoot(
 
             // Reset gun
             gun.force = 0.0;
+            // Swap player
+            let player_index = players.current_player.unwrap_or(0);
+            let player_index = (player_index + 1) % players.names.len();
+            players.current_player = Some(player_index);
         }
     }
     if keyboard.pressed(KeyCode::Space) {
@@ -163,13 +205,21 @@ fn aim_system(
     }
 }
 
-fn debug_aim(player_q: Query<&GlobalTransform, With<Player>>, gun: Res<Gun>, mut gizmo: Gizmos) {
-    if let Ok(player) = player_q.get_single() {
-        let translation = player.translation().truncate();
-        gizmo.line_2d(
-            translation,
-            gun.target,
-            Color::rgb(1.0, 0.0, 0.0),
-        );
+fn debug_aim(
+    player_q: Query<(&GlobalTransform, &Player)>,
+    gun: Res<Gun>,
+    players: Res<Players>,
+    mut gizmo: Gizmos,
+) {
+    let player = player_q.iter().find(|(_, player)| {
+        if let Some(current_player) = &players.current_player {
+            player.name == players.names[*current_player]
+        } else {
+            false
+        }
+    });
+    if let Some((transform, _)) = player {
+        let translation = transform.translation().truncate();
+        gizmo.line_2d(translation, gun.target, Color::rgb(1.0, 0.0, 0.0));
     }
 }

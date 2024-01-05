@@ -31,14 +31,16 @@ pub struct Board {
 }
 
 #[derive(Resource, Default)]
-pub struct Player1 {
+pub struct Players {
     map: Handle<LdtkAsset>,
     loaded: bool,
+    names: Vec<String>,
+    current_player: Option<usize>,
 }
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     let mut camera_bundle = Camera2dBundle::default();
-    camera_bundle.projection.scaling_mode = ScalingMode::FixedVertical(500.0);
+    camera_bundle.projection.scaling_mode = ScalingMode::FixedVertical(256.0);
     commands.spawn(camera_bundle);
 
     // Load the map
@@ -47,9 +49,11 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         map: map_handle.clone(),
         loaded: false,
     });
-    commands.insert_resource(Player1 {
+    commands.insert_resource(Players {
         map: map_handle.clone(),
         loaded: false,
+        names: Vec::new(),
+        current_player: None,
     });
 }
 
