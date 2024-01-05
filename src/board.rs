@@ -1,7 +1,11 @@
-use bevy::{math::ivec2, prelude::*};
+use bevy::prelude::*;
 use bevy_rapier2d::{dynamics::RigidBody, geometry::Collider, pipeline::CollisionEvent};
 
-use crate::shot::Shot;
+use crate::{
+    ldtk::{self, convert_coords, LdtkAsset},
+    player::Shot,
+    Board,
+};
 
 pub struct BoardPlugin;
 
@@ -9,10 +13,46 @@ impl Plugin for BoardPlugin {
     fn build(&self, app: &mut App) {
         app.add_event::<FractureEvent>()
             .add_event::<DamageEvent>()
-            .add_systems(Startup, spawn_board2)
+            .add_systems(Update, spawn_board)
             .add_systems(Update, read_colisions)
             .add_systems(Update, handle_fracture)
             .add_systems(Update, handle_health);
+    }
+}
+
+fn spawn_board(mut commands: Commands, mut board: ResMut<Board>, maps: Res<Assets<LdtkAsset>>) {
+    // Board is already loaded or the map is not loaded yet
+    if board.loaded || maps.get(&board.map).is_none() {
+        return;
+    }
+
+    eprintln!("Spawning board");
+
+    let map = maps.get(&board.map).expect("Failed to load map");
+    let project = &map.project;
+
+    // Assume we use the first level
+    let level = &project.levels[0];
+    let level_width = level.px_wid as f32;
+    let level_height = level.px_hei as f32;
+    let level_size = Vec2::new(level_width, level_height);
+    // Use the first tile layer
+    let layers = level.layer_instances.as_ref().expect("No layers");
+    for layer in layers {
+        spawn_layer(&mut commands, level_size, layer);
+    }
+
+    board.loaded = true;
+}
+
+fn spawn_layer(commands: &mut Commands, level_size: Vec2, layer: &ldtk::LayerInstance) {
+    let grid_size = layer.grid_size as f32;
+    let brick_size = Vec2::new(grid_size, grid_size);
+
+    // Spawn tiles
+    for tile in &layer.grid_tiles {
+        let position = convert_coords(&tile.px, grid_size, level_size);
+        spawn_brick(commands, position, brick_size);
     }
 }
 
@@ -26,75 +66,20 @@ impl Default for BoardBrick {
     }
 }
 
-#[derive(Resource, Debug)]
-struct BoardAtlas {
-    texture_atlas_handle: Handle<TextureAtlas>,
-}
-
-fn spawn_board2(
-    mut commands: Commands,
-    asset_server: Res<AssetServer>,
-    mut texture_atlases: ResMut<Assets<TextureAtlas>>,
-) {
-    let texture_handle = asset_server.load("tiles.png");
-    let brick_size = Vec2::new(16.0, 16.0);
-    let texture_atlas = TextureAtlas::from_grid(texture_handle, brick_size, 1, 1, None, None);
-    let texture_atlas_handle = texture_atlases.add(texture_atlas);
-
-    commands.insert_resource(BoardAtlas {
-        texture_atlas_handle: texture_atlas_handle.clone(),
-    });
-
-    for tpos in tower_iter2() {
-        commands
-            .spawn(SpriteBundle {
-                sprite: Sprite {
-                    color: Color::rgb(0.0, 1.0, 0.0),
-                    custom_size: Some(brick_size),
-                    ..Default::default()
-                },
-                transform: Transform::from_xyz(tpos.x , tpos.y , 0.0),
-                ..default()
-            })
-            .insert(RigidBody::Fixed)
-            .insert(Collider::cuboid(8.0, 8.0))
-            .insert(BoardBrick::default());
-    }
-}
-
-// fn tower_iter(position: IVec2, width: u32, height: u32) -> impl Iterator<Item = IVec2> {
-//     (0..height)
-//         .map(move |y| (0..width).map(move |x| ivec2(position.x + x as i32, position.y + y as i32)))
-//         .flatten()
-// }
-fn tower_iter2() -> impl Iterator<Item = Vec2> {
-    let file = "assets/test.ldtk";
-    let project = crate::ldtk::load(file).expect("failed to load ldtk file");
-
-    project.levels.into_iter().flat_map(|level| {
-        // Adjust for LDTK using y pointing down
-        let level_height = level.px_hei as f32;
-        let level_width = level.px_wid as f32;
-        level.layer_instances.into_iter().flat_map(move |layer| {
-            layer.into_iter().flat_map(move |instance| {
-                let grid_size = instance.grid_size as f32;
-                instance.grid_tiles.into_iter().map(move |tile| {
-                    let center_x = tile.px[0] as f32 + grid_size / 2.0;
-                    let center_y = tile.px[1] as f32 + grid_size / 2.0;
-
-                    // Transform into our coordinate system
-                    let center_y = level_height - center_y;
-
-                    // Move the entire level to the center
-                    let center_x = center_x - level_width / 2.0;
-                    let center_y = center_y - level_height / 2.0;
-
-                    // Convert to grid coordinates
-                    Vec2::new(center_x, center_y)
-                })
-            })
+fn spawn_brick(commands: &mut Commands, position: Vec2, size: Vec2) {
+    commands
+        .spawn(SpriteBundle {
+            sprite: Sprite {
+                color: Color::rgb(0.0, 1.0, 0.0),
+                custom_size: Some(size),
+                ..Default::default()
+            },
+            transform: Transform::from_xyz(position.x, position.y, 0.0),
+            ..default()
         })
-    })
+        .insert(RigidBody::Fixed)
+        .insert(Collider::cuboid(size.x / 2.0, size.y / 2.0))
+        .insert(BoardBrick::default());
 }
 
 #[derive(Event, Debug)]
@@ -181,23 +166,15 @@ fn handle_fracture(
                     );
 
                     commands
-                        .spawn((
-                            SpriteBundle {
-                                transform,
-                                sprite: Sprite {
-                                    color: Color::rgb(0.0, 0.0, 1.0),
-                                    custom_size: Some(new_size),
-                                    ..Default::default()
-                                },
-                                ..default()
+                        .spawn((SpriteBundle {
+                            transform,
+                            sprite: Sprite {
+                                color: Color::rgb(0.0, 0.0, 1.0),
+                                custom_size: Some(new_size),
+                                ..Default::default()
                             },
-                            // SpriteSheetBundle {
-                            //     texture_atlas: board_atlas.texture_atlas_handle.clone(),
-                            //     sprite: TextureAtlasSprite::new(0),
-                            //     transform: t.clone(),
-                            //     ..default()
-                            // },
-                        ))
+                            ..default()
+                        },))
                         .insert(Collider::cuboid(new_size.x / 2.0, new_size.y / 2.0))
                         .insert(RigidBody::Dynamic);
                 }

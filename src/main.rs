@@ -1,12 +1,13 @@
 mod board;
-mod shot;
 mod ldtk;
+mod player;
 
 use bevy::{prelude::*, render::camera::ScalingMode};
 use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use bevy_rapier2d::prelude::*;
 use board::BoardPlugin;
-use shot::ShotPlugin;
+use ldtk::{LdtkAsset, LdtkAssetLoader};
+use player::PlayerPlugin;
 
 fn main() {
     App::new()
@@ -15,17 +16,41 @@ fn main() {
         .add_plugins(RapierDebugRenderPlugin::default())
         .add_plugins(WorldInspectorPlugin::new())
         .add_plugins(BoardPlugin)
-        .add_plugins(ShotPlugin)
+        .add_plugins(PlayerPlugin)
+        .init_asset::<LdtkAsset>()
+        .init_asset_loader::<LdtkAssetLoader>()
         .add_systems(Startup, setup)
         .add_systems(Update, despawn_far_away)
         .run();
 }
 
-fn setup(mut commands: Commands) {
+#[derive(Resource, Default)]
+pub struct Board {
+    map: Handle<LdtkAsset>,
+    loaded: bool,
+}
+
+#[derive(Resource, Default)]
+pub struct Player1 {
+    map: Handle<LdtkAsset>,
+    loaded: bool,
+}
+
+fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     let mut camera_bundle = Camera2dBundle::default();
     camera_bundle.projection.scaling_mode = ScalingMode::FixedVertical(500.0);
-
     commands.spawn(camera_bundle);
+
+    // Load the map
+    let map_handle = asset_server.load("test.ldtk");
+    commands.insert_resource(Board {
+        map: map_handle.clone(),
+        loaded: false,
+    });
+    commands.insert_resource(Player1 {
+        map: map_handle.clone(),
+        loaded: false,
+    });
 }
 
 fn despawn_far_away(
