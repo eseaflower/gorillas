@@ -116,7 +116,7 @@ fn spawn_shot(commands: &mut Commands, position: Vec2, impulse: Vec2) {
                     color: Color::rgb(0.8, 0.0, 0.0),
                     ..Default::default()
                 },
-                transform: Transform::from_xyz(position.x, position.y, -10.0),
+                transform: Transform::from_xyz(position.x, position.y, 0.0),
                 ..Default::default()
             },
             Shot,
